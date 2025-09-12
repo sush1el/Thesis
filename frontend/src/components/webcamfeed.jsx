@@ -1,14 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react';
 import Webcam from 'react-webcam';
-import { Alert, Card, Badge, Button } from 'antd';
-import { VideoCameraOutlined, WarningOutlined } from '@ant-design/icons';
+import { Card, Badge, Statistic, Row, Col } from 'antd';
+import { VideoCameraOutlined, UserOutlined } from '@ant-design/icons';
 
 const WebcamFeed = () => {
   const webcamRef = useRef(null);
   const wsRef = useRef(null);
-  const [fallDetected, setFallDetected] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
-  const [alertHistory, setAlertHistory] = useState([]);
+  const [processedImage, setProcessedImage] = useState(null);
+  const [poseDetected, setPoseDetected] = useState(false);
+  const [landmarks, setLandmarks] = useState(0);
+  const [confidence, setConfidence] = useState(0);
   
   useEffect(() => {
     // Connect to WebSocket
@@ -16,20 +18,33 @@ const WebcamFeed = () => {
     
     wsRef.current.onopen = () => {
       setIsConnected(true);
-      console.log('Connected to fall detection server');
+      console.log('Connected to MediaPipe server');
     };
     
     wsRef.current.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setFallDetected(data.fall_detected);
       
-      if (data.fall_detected) {
-        const alert = {
-          time: new Date().toLocaleTimeString(),
-          confidence: data.confidence
-        };
-        setAlertHistory(prev => [alert, ...prev].slice(0, 5));
+      // Update processed image with skeleton
+      if (data.processed_image) {
+        setProcessedImage(data.processed_image);
       }
+      
+      // Update pose detection stats
+      if (data.pose_data) {
+        setPoseDetected(data.pose_data.detected);
+        setLandmarks(data.pose_data.landmarks || 0);
+        setConfidence(data.pose_data.confidence || 0);
+      }
+    };
+    
+    wsRef.current.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setIsConnected(false);
+    };
+    
+    wsRef.current.onclose = () => {
+      setIsConnected(false);
+      console.log('Disconnected from server');
     };
     
     // Send frames to backend
@@ -47,71 +62,110 @@ const WebcamFeed = () => {
     
     return () => {
       clearInterval(interval);
-      wsRef.current.close();
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
     };
   }, []);
   
   return (
-    <div style={{ padding: '20px' }}>
-      <Card 
-        title={
-          <span>
-            <VideoCameraOutlined /> Live Fall Detection Monitor
-            <Badge 
-              status={isConnected ? "success" : "error"} 
-              text={isConnected ? "Connected" : "Disconnected"}
-              style={{ marginLeft: '20px' }}
-            />
-          </span>
-        }
-      >
-        <div style={{ position: 'relative' }}>
-          <Webcam
-            ref={webcamRef}
-            screenshotFormat="image/jpeg"
-            width={640}
-            height={480}
-            style={{ 
-              border: fallDetected ? '5px solid red' : '2px solid #d9d9d9',
-              borderRadius: '8px'
-            }}
-          />
-          
-          {fallDetected && (
-            <Alert
-              message="FALL DETECTED!"
-              description="Immediate assistance required"
-              type="error"
-              showIcon
-              icon={<WarningOutlined />}
-              style={{
-                position: 'absolute',
-                top: '10px',
-                right: '10px',
-                width: '250px'
+    <div>
+      <Row gutter={16}>
+        <Col span={12}>
+          <Card 
+            title={
+              <span>
+                <VideoCameraOutlined /> Original Feed
+                <Badge 
+                  status={isConnected ? "success" : "error"} 
+                  text={isConnected ? "Connected" : "Disconnected"}
+                  style={{ marginLeft: '20px' }}
+                />
+              </span>
+            }
+          >
+            <Webcam
+              ref={webcamRef}
+              screenshotFormat="image/jpeg"
+              width={640}
+              height={480}
+              style={{ 
+                width: '100%',
+                height: 'auto',
+                borderRadius: '8px'
               }}
-              action={
-                <Button size="small" danger>
-                  Acknowledge
-                </Button>
-              }
             />
-          )}
-        </div>
+          </Card>
+        </Col>
         
-        <div style={{ marginTop: '20px' }}>
-          <h3>Recent Alerts</h3>
-          {alertHistory.map((alert, index) => (
-            <Alert
-              key={index}
-              message={`Fall detected at ${alert.time}`}
-              type="warning"
-              showIcon
-              style={{ marginBottom: '10px' }}
+        <Col span={12}>
+          <Card 
+            title={
+              <span>
+                <UserOutlined /> MediaPipe Skeleton View
+              </span>
+            }
+          >
+            {processedImage ? (
+              <img 
+                src={processedImage} 
+                alt="Processed feed with skeleton"
+                style={{ 
+                  width: '100%',
+                  height: 'auto',
+                  borderRadius: '8px'
+                }}
+              />
+            ) : (
+              <div style={{ 
+                width: '100%', 
+                height: '480px', 
+                background: '#f0f0f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '8px'
+              }}>
+                Waiting for processed frames...
+              </div>
+            )}
+          </Card>
+        </Col>
+      </Row>
+      
+      <Row gutter={16} style={{ marginTop: '20px' }}>
+        <Col span={8}>
+          <Card>
+            <Statistic
+              title="Pose Detection"
+              value={poseDetected ? "Detected" : "Not Detected"}
+              valueStyle={{ color: poseDetected ? '#3f8600' : '#cf1322' }}
+              prefix={<UserOutlined />}
             />
-          ))}
-        </div>
-      </Card>
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic
+              title="Landmarks Detected"
+              value={landmarks}
+              suffix="/ 33"
+              valueStyle={{ color: '#1890ff' }}
+            />
+          </Card>
+        </Col>
+        <Col span={8}>
+          <Card>
+            <Statistic
+              title="Confidence"
+              value={(confidence * 100).toFixed(1)}
+              suffix="%"
+              precision={1}
+              valueStyle={{ color: confidence > 0.7 ? '#3f8600' : '#faad14' }}
+            />
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };
