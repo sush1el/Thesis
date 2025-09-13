@@ -1,221 +1,159 @@
 import numpy as np
 import cv2
-import mediapipe as mp
 from ultralytics import YOLO
-import tensorflow as tf
-from collections import deque
 from datetime import datetime
 
-class FallDetector:
+class PoseDetector:
     def __init__(self):
-        # MediaPipe initialization
-        self.mp_pose = mp.solutions.pose
-        self.pose = self.mp_pose.Pose(
-            static_image_mode=False,
-            model_complexity=2,
-            enable_segmentation=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
+        # YOLOv8 pose model
+        self.pose_model = YOLO('yolov8n-pose.pt')
         
-        # YOLOv8 for person detection
-        self.yolo_model = YOLO('yolov8n.pt')  # Will download automatically
+        # Body-only connections (excluding face and hands)
+        # We'll only draw connections between shoulders, hips, knees, and ankles
+        self.body_skeleton = [
+            [5, 6],    # Shoulders
+            [5, 11],   # Left shoulder to left hip
+            [6, 12],   # Right shoulder to right hip
+            [11, 12],  # Hips
+            [11, 13],  # Left hip to left knee
+            [13, 15],  # Left knee to left ankle
+            [12, 14],  # Right hip to right knee
+            [14, 16],  # Right knee to right ankle
+        ]
         
-        # Fall detection thresholds
-        self.fall_threshold = 0.6
-        self.angle_threshold = 60  # degrees
-        self.velocity_threshold = 2.0  # relative units
+        # Body-only keypoint indices (0-indexed)
+        # 5: Left Shoulder, 6: Right Shoulder
+        # 11: Left Hip, 12: Right Hip
+        # 13: Left Knee, 14: Right Knee
+        # 15: Left Ankle, 16: Right Ankle
+        self.body_keypoints_indices = [5, 6, 11, 12, 13, 14, 15, 16]
         
-        # Historical data for analysis
-        self.pose_history = deque(maxlen=30)  # Store 30 frames (1 second at 30fps)
-        self.fall_events = []
-        
-    def calculate_body_angle(self, landmarks):
-        """Calculate the angle of the body from vertical"""
-        if not landmarks:
-            return None
-            
-        # Get key points
-        nose = landmarks[self.mp_pose.PoseLandmark.NOSE.value]
-        left_hip = landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value]
-        right_hip = landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value]
-        
-        # Calculate midpoint of hips
-        hip_center_x = (left_hip.x + right_hip.x) / 2
-        hip_center_y = (left_hip.y + right_hip.y) / 2
-        
-        # Calculate angle from vertical
-        dx = nose.x - hip_center_x
-        dy = nose.y - hip_center_y
-        angle = np.degrees(np.arctan2(dx, -dy))  # Negative dy for correct orientation
-        
-        return abs(angle)
-    
-    def calculate_vertical_velocity(self, current_landmarks):
-        """Calculate vertical velocity of key points"""
-        if len(self.pose_history) < 2:
-            return 0
-            
-        prev_landmarks = self.pose_history[-2]
-        if not prev_landmarks or not current_landmarks:
-            return 0
-            
-        # Track hip center velocity
-        curr_left_hip = current_landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value]
-        curr_right_hip = current_landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value]
-        prev_left_hip = prev_landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value]
-        prev_right_hip = prev_landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value]
-        
-        curr_hip_y = (curr_left_hip.y + curr_right_hip.y) / 2
-        prev_hip_y = (prev_left_hip.y + prev_right_hip.y) / 2
-        
-        velocity = (curr_hip_y - prev_hip_y) * 30  # Multiply by FPS for velocity
-        return velocity
-    
-    def detect_fall_from_pose(self, landmarks):
-        """Detect fall based on pose analysis"""
-        if not landmarks:
-            return False, 0
-            
-        # Calculate metrics
-        body_angle = self.calculate_body_angle(landmarks)
-        vertical_velocity = self.calculate_vertical_velocity(landmarks)
-        
-        # Get hip position relative to frame
-        left_hip = landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value]
-        right_hip = landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value]
-        hip_height = (left_hip.y + right_hip.y) / 2
-        
-        # Fall detection logic
-        fall_score = 0
-        reasons = []
-        
-        # Check body angle
-        if body_angle and body_angle > self.angle_threshold:
-            fall_score += 0.4
-            reasons.append(f"Body angle: {body_angle:.1f}°")
-        
-        # Check vertical velocity (falling down)
-        if vertical_velocity > self.velocity_threshold:
-            fall_score += 0.3
-            reasons.append(f"Fast downward movement: {vertical_velocity:.2f}")
-        
-        # Check if person is low in frame (on ground)
-        if hip_height > 0.7:  # Lower 30% of frame
-            fall_score += 0.3
-            reasons.append(f"Low position: {hip_height:.2f}")
-        
-        # Additional check: sudden change in pose
-        if len(self.pose_history) >= 10:
-            recent_angles = [self.calculate_body_angle(p) for p in self.pose_history[-10:] if p]
-            if recent_angles and body_angle:
-                angle_change = body_angle - np.mean([a for a in recent_angles if a])
-                if angle_change > 30:
-                    fall_score += 0.2
-                    reasons.append(f"Sudden angle change: {angle_change:.1f}°")
-        
-        is_fall = fall_score >= self.fall_threshold
-        
-        return is_fall, fall_score, reasons
-    
     def process_frame(self, frame):
-        """Process a single frame for fall detection"""
+        """Process a single frame for pose detection"""
         results = {
-            'person_detected': False,
-            'pose_detected': False,
-            'fall_detected': False,
-            'fall_confidence': 0,
-            'reasons': [],
+            'person_detected': False,      # For frontend compatibility
+            'people_detected': 0,
+            'pose_detected': False,         # For frontend compatibility
+            'poses_detected': 0,
+            'num_people': 0,                # Alternative key for frontend
+            'body_keypoints': [],
+            'keypoints_detected': 0,        # For frontend display
             'timestamp': datetime.now().isoformat()
         }
         
-        # YOLOv8 person detection
-        yolo_results = self.yolo_model(frame, classes=[0])  # Class 0 is person
+        # Run YOLOv8 pose detection
+        pose_results = self.pose_model(frame, verbose=False)
         
-        if len(yolo_results[0].boxes) > 0:
-            results['person_detected'] = True
+        if len(pose_results) > 0:
+            result = pose_results[0]
             
-            # Get the largest person bounding box
-            boxes = yolo_results[0].boxes
-            largest_box_idx = np.argmax([box.xywh[0][2] * box.xywh[0][3] for box in boxes])
-            box = boxes[largest_box_idx]
-            
-            # Crop to person region for better pose detection
-            x1, y1, x2, y2 = box.xyxy[0].int().tolist()
-            person_roi = frame[y1:y2, x1:x2]
-            
-            # MediaPipe pose detection
-            rgb_roi = cv2.cvtColor(person_roi, cv2.COLOR_BGR2RGB)
-            pose_results = self.pose.process(rgb_roi)
-            
-            if pose_results.pose_landmarks:
-                results['pose_detected'] = True
-                landmarks = pose_results.pose_landmarks.landmark
+            if result.keypoints is not None and result.keypoints.xy is not None:
+                keypoints = result.keypoints.xy.cpu().numpy()
+                confidences = result.keypoints.conf.cpu().numpy() if result.keypoints.conf is not None else None
                 
-                # Store in history
-                self.pose_history.append(landmarks)
+                num_people = len(keypoints)
+                results['people_detected'] = num_people
+                results['person_detected'] = num_people > 0
+                results['poses_detected'] = num_people
+                results['pose_detected'] = num_people > 0
+                results['num_people'] = num_people
                 
-                # Detect fall
-                is_fall, confidence, reasons = self.detect_fall_from_pose(landmarks)
-                results['fall_detected'] = is_fall
-                results['fall_confidence'] = confidence
-                results['reasons'] = reasons
+                # Count total keypoints for display
+                total_keypoints = 0
                 
-                if is_fall:
-                    self.fall_events.append({
-                        'timestamp': results['timestamp'],
-                        'confidence': confidence,
-                        'reasons': reasons
-                    })
+                # Extract only body keypoints for each person
+                for person_idx in range(len(keypoints)):
+                    person_keypoints = keypoints[person_idx]
+                    person_conf = confidences[person_idx] if confidences is not None else None
+                    
+                    # Filter to body-only keypoints
+                    body_points = {}
+                    for idx in self.body_keypoints_indices:
+                        if person_keypoints[idx][0] > 0 and person_keypoints[idx][1] > 0:
+                            body_points[idx] = {
+                                'x': float(person_keypoints[idx][0]),
+                                'y': float(person_keypoints[idx][1]),
+                                'conf': float(person_conf[idx]) if person_conf is not None else 1.0
+                            }
+                            total_keypoints += 1
+                    
+                    results['body_keypoints'].append(body_points)
+                
+                results['keypoints_detected'] = total_keypoints
         
         return results
-
-class GaitAnalyzer:
-    """Analyze walking patterns for pre-fall detection"""
     
-    def __init__(self):
-        self.mp_pose = mp.solutions.pose
-        self.gait_history = deque(maxlen=90)  # 3 seconds at 30fps
-        self.stride_lengths = deque(maxlen=10)
-        self.step_times = deque(maxlen=10)
+    def draw_annotations(self, frame, results):
+        """Draw only body skeleton on frame"""
+        annotated_frame = frame.copy()
         
-    def analyze_gait(self, landmarks):
-        """Analyze gait patterns for instability"""
-        if not landmarks:
-            return None
+        # Run detection for drawing
+        pose_results = self.pose_model(frame, verbose=False)
+        
+        if len(pose_results) > 0:
+            result = pose_results[0]
             
-        # Calculate step width
-        left_ankle = landmarks[self.mp_pose.PoseLandmark.LEFT_ANKLE.value]
-        right_ankle = landmarks[self.mp_pose.PoseLandmark.RIGHT_ANKLE.value]
-        step_width = abs(left_ankle.x - right_ankle.x)
+            if result.keypoints is not None and result.keypoints.xy is not None:
+                keypoints = result.keypoints.xy.cpu().numpy()
+                confidences = result.keypoints.conf.cpu().numpy() if result.keypoints.conf is not None else None
+                
+                # Draw for each person
+                for person_idx in range(len(keypoints)):
+                    person_keypoints = keypoints[person_idx]
+                    person_conf = confidences[person_idx] if confidences is not None else None
+                    
+                    # Draw body skeleton connections
+                    for connection in self.body_skeleton:
+                        idx1, idx2 = connection
+                        x1, y1 = person_keypoints[idx1]
+                        x2, y2 = person_keypoints[idx2]
+                        
+                        # Check if keypoints are valid
+                        if x1 > 0 and y1 > 0 and x2 > 0 and y2 > 0:
+                            # Check confidence
+                            conf_check = True
+                            if person_conf is not None:
+                                conf_check = person_conf[idx1] > 0.5 and person_conf[idx2] > 0.5
+                            
+                            if conf_check:
+                                # Draw line
+                                cv2.line(annotated_frame, 
+                                       (int(x1), int(y1)), 
+                                       (int(x2), int(y2)), 
+                                       (0, 255, 0), 3, cv2.LINE_AA)
+                    
+                    # Draw body keypoints only
+                    for idx in self.body_keypoints_indices:
+                        x, y = person_keypoints[idx]
+                        if x > 0 and y > 0:
+                            conf = person_conf[idx] if person_conf is not None else 1.0
+                            if conf > 0.5:
+                                # Color based on confidence
+                                if conf > 0.75:
+                                    color = (0, 255, 0)  # Green for high confidence
+                                else:
+                                    color = (0, 165, 255)  # Orange for medium confidence
+                                
+                                # Draw keypoint
+                                cv2.circle(annotated_frame, (int(x), int(y)), 6, color, -1)
+                                cv2.circle(annotated_frame, (int(x), int(y)), 8, (255, 255, 255), 2)
+                    
+                    # Draw bounding box around person
+                    if result.boxes is not None and len(result.boxes) > person_idx:
+                        box = result.boxes[person_idx]
+                        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy().astype(int)
+                        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (255, 0, 255), 2)
         
-        # Calculate center of mass shift
-        left_hip = landmarks[self.mp_pose.PoseLandmark.LEFT_HIP.value]
-        right_hip = landmarks[self.mp_pose.PoseLandmark.RIGHT_HIP.value]
-        com_x = (left_hip.x + right_hip.x) / 2
+        # Add status text with background
+        status = f"People: {results['people_detected']} | Body Poses: {results['poses_detected']}"
         
-        self.gait_history.append({
-            'step_width': step_width,
-            'com_x': com_x,
-            'timestamp': datetime.now()
-        })
+        # Black background for text
+        cv2.rectangle(annotated_frame, (5, 5), (450, 40), (0, 0, 0), -1)
+        cv2.putText(annotated_frame, status, (10, 30),
+                   cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
         
-        # Analyze patterns
-        if len(self.gait_history) >= 30:
-            recent_widths = [g['step_width'] for g in self.gait_history[-30:]]
-            recent_com = [g['com_x'] for g in self.gait_history[-30:]]
-            
-            # Calculate variability (higher = more unstable)
-            width_variability = np.std(recent_widths)
-            com_variability = np.std(recent_com)
-            
-            instability_score = (width_variability * 2 + com_variability) / 3
-            
-            return {
-                'instability_score': instability_score,
-                'step_width_var': width_variability,
-                'com_sway': com_variability,
-                'risk_level': 'high' if instability_score > 0.15 else 'medium' if instability_score > 0.08 else 'low'
-            }
+        # Add label
+        cv2.putText(annotated_frame, "Body Posture Only (No Face/Hands)", (10, 60),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 0), 2, cv2.LINE_AA)
         
-        return None
+        return annotated_frame
