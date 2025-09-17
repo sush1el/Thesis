@@ -1,42 +1,110 @@
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  /* Remove overflow: hidden to allow scrolling */
+}
+
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
-  text-align: center;
+  width: 100%;
+  min-height: 100vh;
+  display: block;
+  text-align: left;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+/* Layout adjustments */
+.ant-layout {
+  min-height: 100vh; /* Changed from height: 100vh */
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.ant-layout-content {
+  /* Remove overflow: hidden to allow content to scroll */
+  overflow: visible;
+}
+
+/* Full height tabs styles - Modified for scrollable content */
+.full-height-tabs {
+  min-height: calc(100vh - 64px); /* Account for header height */
+  display: flex;
+  flex-direction: column;
+}
+
+.full-height-tabs .ant-tabs-content {
+  flex: 1;
+  min-height: 0;
+}
+
+.full-height-tabs .ant-tabs-content-holder {
+  min-height: 500px; /* Minimum height instead of 100% */
+}
+
+.full-height-tabs .ant-tabs-tabpane {
+  min-height: 500px; /* Minimum height instead of 100% */
+  padding: 24px;
+}
+
+/* Card adjustments for better spacing */
+.ant-card {
+  min-height: 200px; /* Changed from height: 100% */
+  display: flex;
+  flex-direction: column;
+}
+
+.ant-card-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Webcam feed container adjustments */
+.webcam-feed-container {
+  width: 100%;
+  min-height: 600px; /* Changed from height: 100% */
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Video containers */
+.webcam-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+  overflow: hidden;
+}
+
+/* Model testing container */
+.model-testing-container {
+  width: 100%;
+  min-height: 800px;
+  padding: 24px;
+  /* Allow natural overflow and scrolling */
+}
+
+/* Full height container for main content */
+.full-height-container {
+  min-height: calc(100vh - 64px);
+  padding: 24px;
+}
+
+/* Responsive adjustments */
+@media (max-height: 800px) {
+  .full-height-tabs .ant-tabs-content-holder,
+  .full-height-tabs .ant-tabs-tabpane {
+    min-height: auto;
   }
-  to {
-    transform: rotate(360deg);
+  
+  .webcam-feed-container {
+    min-height: auto;
   }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+  
+  .ant-card {
+    min-height: auto;
   }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Layout, Typography, Tabs, Card, Row, Col, Statistic, Tag, Upload, Button, Table, Space, Select, Progress, Alert, Input, Divider, Badge } from 'antd';
 import { UserOutlined, VideoCameraOutlined, RobotOutlined, UploadOutlined, PlayCircleOutlined, BarChartOutlined, ExperimentOutlined, FileAddOutlined, DatabaseOutlined, CheckCircleOutlined, CloseCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import Webcam from 'react-webcam';
+import '../App.css'; // Import the CSS file
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -69,8 +70,8 @@ const WebcamFeed = () => {
   }, []);
   
   return (
-    <div style={{ width: '100%', height: '100%' }}>
-      <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+    <div className="webcam-feed-container">
+      <Row gutter={[16, 16]}>
         <Col span={8}>
           <Card size="small">
             <Statistic
@@ -102,25 +103,22 @@ const WebcamFeed = () => {
         </Col>
       </Row>
       
-      <Row gutter={16} style={{ height: 'calc(100vh - 320px)' }}>
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={12}>
           <Card 
             title={<span><VideoCameraOutlined /> Camera Feed</span>} 
             size="small"
-            bodyStyle={{ padding: '12px', height: '100%' }}
-            style={{ height: '100%' }}
+            style={{ minHeight: 400 }}
           >
-            <div style={{ position: 'relative', width: '100%', paddingTop: '75%' }}>
+            <div className="webcam-container">
               <Webcam
                 ref={webcamRef}
                 screenshotFormat="image/jpeg"
                 style={{ 
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
+                  maxWidth: '100%',
+                  maxHeight: '350px',
+                  width: 'auto',
+                  height: 'auto',
                   borderRadius: '4px' 
                 }}
               />
@@ -132,44 +130,37 @@ const WebcamFeed = () => {
           <Card 
             title={<span><RobotOutlined /> Pose Detection (YOLOv8 + MediaPipe)</span>}
             size="small"
-            bodyStyle={{ padding: '12px', height: '100%' }}
-            style={{ height: '100%' }}
+            style={{ minHeight: 400 }}
           >
             {processedImage ? (
-              <div style={{ position: 'relative', width: '100%', paddingTop: '75%' }}>
+              <div className="webcam-container">
                 <img 
                   src={processedImage} 
                   alt="Pose detection"
                   style={{ 
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: '100%',
-                    objectFit: 'cover',
+                    maxWidth: '100%',
+                    maxHeight: '350px',
+                    width: 'auto',
+                    height: 'auto',
                     borderRadius: '4px'
                   }}
                 />
               </div>
             ) : (
               <div style={{ 
-                position: 'relative',
                 width: '100%',
-                paddingTop: '75%',
+                height: '350px',
                 background: '#f0f0f0',
-                borderRadius: '4px'
+                borderRadius: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}>
-                <div style={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  textAlign: 'center'
-                }}>
+                <div style={{ textAlign: 'center' }}>
                   {isConnected ? (
                     <>
                       <SyncOutlined spin style={{ fontSize: '24px', color: '#1890ff' }} />
-                      <p style={{ marginTop: '8px', color: '#666' }}>Connecting...</p>
+                      <p style={{ marginTop: '8px', color: '#666' }}>Waiting for frames...</p>
                     </>
                   ) : (
                     <p style={{ color: '#666' }}>Waiting for connection...</p>
@@ -258,7 +249,7 @@ const ModelTesting = () => {
   ] : [];
 
   return (
-    <div style={{ width: '100%' }}>
+    <div className="model-testing-container">
       <Row gutter={[16, 16]}>
         <Col span={12}>
           <Card title="Model Management" extra={<Badge status="processing" text="PyTorch" />}>
@@ -491,37 +482,40 @@ function App() {
   ];
 
   return (
-    <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
+    <Layout>
       <Header style={{ 
         background: '#001529', 
         padding: '0 24px',
         display: 'flex',
         alignItems: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+        boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+        zIndex: 1,
+        position: 'sticky',
+        top: 0
       }}>
         <Title level={3} style={{ color: 'white', margin: 0 }}>
           CaretAIker - MediaPipe Pose Detection Dashboard
         </Title>
       </Header>
       
-      <Content style={{ padding: '24px', height: 'calc(100vh - 64px)' }}>
-        <div style={{ 
-          background: '#fff', 
-          borderRadius: '8px',
-          height: '100%',
-          overflow: 'hidden'
-        }}>
-          <Tabs
-            items={tabItems}
-            size="large"
-            style={{ height: '100%' }}
-            tabBarStyle={{ 
-              paddingLeft: 24,
-              paddingRight: 24,
-              marginBottom: 0,
-              borderBottom: '1px solid #f0f0f0'
-            }}
-          />
+      <Content>
+        <div className="full-height-container">
+          <div style={{ 
+            background: '#fff', 
+            borderRadius: '8px',
+            minHeight: 'calc(100vh - 112px)'
+          }}>
+            <Tabs
+              items={tabItems}
+              size="large"
+              tabBarStyle={{ 
+                paddingLeft: 24,
+                paddingRight: 24,
+                marginBottom: 0,
+                borderBottom: '1px solid #f0f0f0'
+              }}
+            />
+          </div>
         </div>
       </Content>
     </Layout>
